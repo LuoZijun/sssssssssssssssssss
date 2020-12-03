@@ -70,7 +70,7 @@ pub async fn handle_socks5_incoming(mut local_tcp_stream: TcpStream, remote_addr
     if n_methods as usize > amt - 1 {
         return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "malformed socks5 packet"));
     }
-    let methods = &buffer[1..n_methods as usize];
+    let methods = &buffer[1.. 1 + n_methods as usize];
     let no_auth = methods.iter().any(|&m| m == SOCKS_METHOD_NO_AUTH);
     if !no_auth {
         return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "socks5 auth method no match"));
