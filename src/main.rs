@@ -10,7 +10,6 @@ extern crate ss;
 mod boot;
 
 use ss::client::SocksClient;
-use ss::client::SocksClientConfig;
 
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

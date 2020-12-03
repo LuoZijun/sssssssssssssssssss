@@ -27,19 +27,22 @@ pub struct SocksClientConfig {
 
 
 pub struct SocksClient {
-    listener: TcpListener,
-    socks_server_addr: SocketAddr,
+    local_addr: SocketAddr,
+    local_tcp_listener: TcpListener,
+
+    remote_addr: SocketAddr,
+
     method: CipherKind,
     key: Vec<u8>,
 }
 
 impl SocksClient {
     pub async fn new(config: SocksClientConfig) -> io::Result<Self> {
-        let addr = config.bind_addr;
-        let listener = TcpListener::bind(addr).await?;
-        info!("tcp listener listening at {:?}.", listener.local_addr()?);
+        let local_addr = config.bind_addr;
+        let local_tcp_listener = TcpListener::bind(local_addr).await?;
+        info!("tcp listener listening at {:?}.", local_tcp_listener.local_addr()?);
 
-        let socks_server_addr = config.server_addr;
+        let remote_addr = config.server_addr;
         let method = config.method;
         let password = config.password;
         let key_len = method.key_len();
@@ -47,19 +50,18 @@ impl SocksClient {
         let mut key = vec![0u8; key_len];
         openssl_bytes_to_key(&password, &mut key);
 
-        Ok(Self { listener, socks_server_addr, method, key, })
+        Ok(Self { local_addr, local_tcp_listener, remote_addr, method, key, })
     }
     
     pub async fn run_forever(&self) -> io::Result<()> {
         loop {
-            let (stream, peer_addr) = self.listener.accept().await?;
+            let (local_tcp_stream, peer_addr) = self.local_tcp_listener.accept().await?;
             info!("got socks connection {:?}", peer_addr);
             
-
-            let socks_server_addr = self.socks_server_addr;
+            let remote_addr = self.remote_addr;
             tokio::spawn(async move {
-                let _ = stream.set_nodelay(true);
-                if let Err(e) = handle_socks_incoming(stream, socks_server_addr).await {
+                let _ = local_tcp_stream.set_nodelay(true);
+                if let Err(e) = handle_socks_incoming(local_tcp_stream, remote_addr).await {
                     error!("socks connection error: {}", e);
                 }
             });
@@ -68,14 +70,14 @@ impl SocksClient {
 }
 
 // T: AsyncRead + AsyncWrite + Unpin
-async fn handle_socks_incoming(mut stream: TcpStream, socks_server_addr: SocketAddr) -> io::Result<()> {
+async fn handle_socks_incoming(mut local_tcp_stream: TcpStream, remote_addr: SocketAddr) -> io::Result<()> {
     let mut pkt = [0u8; 1];
-    let _amt = stream.read_exact(&mut pkt).await?;
+    let _amt = local_tcp_stream.read_exact(&mut pkt).await?;
     let ver = pkt[0];
 
     match ver {
-        SOCKS_V4 => handle_socks4_incoming(stream, socks_server_addr).await,
-        SOCKS_V5 => handle_socks5_incoming(stream, socks_server_addr).await,
+        SOCKS_V4 => handle_socks4_incoming(local_tcp_stream, remote_addr).await,
+        SOCKS_V5 => handle_socks5_incoming(local_tcp_stream, remote_addr).await,
         _        => Err(io::Error::new(io::ErrorKind::ConnectionAborted, "unsupported socks version")),
     }
 }

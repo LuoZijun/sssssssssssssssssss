@@ -40,9 +40,9 @@ use std::net::SocketAddr;
 // +----+----+----+----+----+----+----+----+
 //    1    1      2              4
 
-pub async fn handle_socks4_incoming(mut stream: TcpStream, socks_server_addr: SocketAddr) -> io::Result<()> {
-    let mut buffer = vec![0u8; 1 << 16]; // 32K
-    let amt = stream.read(&mut buffer).await?;
+pub async fn handle_socks4_incoming(mut local_tcp_stream: TcpStream, remote_addr: SocketAddr) -> io::Result<()> {
+    let mut buffer = [0u8; 1024];
+    let amt = local_tcp_stream.read(&mut buffer).await?;
     if amt < 8 {
         return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "malformed socks4 packet"));
     }
@@ -76,7 +76,9 @@ pub async fn handle_socks4_incoming(mut stream: TcpStream, socks_server_addr: So
         
         name_pos_end = offset;
 
-        offset += 1;
+        #[allow(unused_assignments)]
+        { offset += 1; }
+        
 
         let name = &buffer[name_pos_start..name_pos_end];
 
@@ -114,11 +116,11 @@ pub async fn handle_socks4_incoming(mut stream: TcpStream, socks_server_addr: So
     buffer[5] = 0;
     buffer[6] = 0;
     buffer[7] = 0;
-    stream.write_all(&buffer[..8]).await?;
+    local_tcp_stream.write_all(&buffer[..8]).await?;
 
     // NOTE: ss-remote 只支持 类似于 SOCKS-5 的报文格式，因此，我们在重新组装下报文发送给 ss-remote。
-    let mut remote = TcpStream::connect(socks_server_addr).await?;
-    let _ = remote.set_nodelay(true);
+    let mut remote_tcp_stream = TcpStream::connect(remote_addr).await?;
+    let _ = remote_tcp_stream.set_nodelay(true);
 
     buffer[0] = SOCKS_ATYP_IPV4;
     if has_domain_name {
@@ -137,7 +139,7 @@ pub async fn handle_socks4_incoming(mut stream: TcpStream, socks_server_addr: So
         buffer[2 + name_len + 1] = dst_port[1];
 
         let total_len = 2 + name_len + 1 + 1;
-        remote.write_all(&buffer[..total_len]).await?;
+        remote_tcp_stream.write_all(&buffer[..total_len]).await?;
     } else {
         buffer[1] = dst_ip[0];
         buffer[2] = dst_ip[1];
@@ -146,12 +148,12 @@ pub async fn handle_socks4_incoming(mut stream: TcpStream, socks_server_addr: So
 
         buffer[5] = dst_port[0];
         buffer[6] = dst_port[1];
-        remote.write_all(&buffer[..7]).await?;
+        remote_tcp_stream.write_all(&buffer[..7]).await?;
     }
 
     // 中继就绪，拷贝数据。
-    let (mut r1, mut w1) = stream.split();
-    let (mut r2, mut w2) = remote.split();
+    let (mut r1, mut w1) = local_tcp_stream.split();
+    let (mut r2, mut w2) = remote_tcp_stream.split();
 
     // tokio::join!(
     //     tokio::io::copy(&mut r1, &mut w2),
@@ -159,11 +161,11 @@ pub async fn handle_socks4_incoming(mut stream: TcpStream, socks_server_addr: So
     // );
 
     tokio::select! {
-        _ = tokio::io::copy(&mut r1, &mut w2) => {
-
+        ret = tokio::io::copy(&mut r1, &mut w2) => {
+            let _ = ret?;
         },
-        _ = tokio::io::copy(&mut r2, &mut w1) => {
-
+        ret = tokio::io::copy(&mut r2, &mut w1) => {
+            let _ = ret?;
         },
     };
 

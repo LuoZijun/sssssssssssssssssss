@@ -7,11 +7,6 @@
 // SOCKS Protocol Version 5
 // https://tools.ietf.org/html/rfc1928
 
-
-// SOCKS5 CONNECT command
-// SOCKS5 UDP ASSOCIATE command (partial)
-// SOCKS4/4a CONNECT command
-
 pub const SOCKS_V4: u8 = 0x04; // SOCKS-4、SOCKS-4A
 pub const SOCKS_V5: u8 = 0x05; // SOCKS-5
 
@@ -75,4 +70,3 @@ pub const SOCKS_METHOD_NO_AUTH: u8       = 0x00;
 pub const SOCKS_METHOD_GSSAPI: u8        = 0x01;
 pub const SOCKS_METHOD_PASSWD_AUTH: u8   = 0x02;
 pub const SOCKS_METHOD_NO_ACCEPTABLE: u8 = 0xFF;
-
